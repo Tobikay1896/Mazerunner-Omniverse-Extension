@@ -10,25 +10,21 @@ class MyExtension(omni.ext.IExt):
     def on_startup(self, ext_id):
         print("[MazeRunner] Startup gestartet...")
         
-        # Pfade und API-Konfiguration
         ext_path = omni.kit.app.get_app().get_extension_manager().get_extension_path(ext_id)
         self.json_path = os.path.join(ext_path, "omni", "mazerunner", "API", "nodes_db.json")
         
-        # Endpunkte (Nutze GetValues für Bulk-Abfragen)
-        self.api_url_bulk = "https://digitaltwinservice.de/api/Database/GetValues"
+        self.api_url_get = "https://digitaltwinservice.de/api/Database/GetValue"
         self.api_url_set = "https://digitaltwinservice.de/api/Database/SetValue"
         self.api_key = "2b56f658-b11f-4067-9537-631bf27a30f0"
         
-        # Status-Variablen
+        self._window = ui.Window("Maze Runner - Web-API Control-Center", width=850, height=450)
+        self._window.deferred_dock_in("Property")
+
         self.node_labels = {}
         self.node_values = {}
         self.nodes = []
         self._is_running = True 
         self._update_task = None
-
-        # UI Setup
-        self._window = ui.Window("Maze Runner - Web-API Control-Center", width=850, height=450)
-        self._window.deferred_dock_in("Property")
 
         with self._window.frame:
             with ui.VStack(spacing=5, m=10):
@@ -82,11 +78,10 @@ class MyExtension(omni.ext.IExt):
                     
                     ui.Spacer(width=50)
                     ui.Button("TOGGLE", width=120, height=24, 
-                             clicked_fn=lambda n=node_id: self.on_control_clicked(n))
+                              clicked_fn=lambda n=node_id: self.on_control_clicked(n))
 
     def on_control_clicked(self, node_id):
         current_val = self.node_values.get(node_id, False)
-        # Toggle Logik für Boolean, sonst Reset auf 0.0
         new_val = not current_val if isinstance(current_val, bool) else 0.0
         
         if node_id in self.node_labels:
@@ -104,7 +99,13 @@ class MyExtension(omni.ext.IExt):
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.post(self.api_url_set, params=params, headers=headers, timeout=5, ssl=False) as resp:
-                    if resp.status != 200:
+                    if resp.status == 200:
+                        # ERFOLG: (sending...) entfernen und Farbe anpassen
+                        if node_id in self.node_labels:
+                            self.node_labels[node_id].text = str(value)
+                            color = 0xFF00FF00 if value is True else 0xFFFFFFFF
+                            self.node_labels[node_id].set_style({"color": color})
+                    else:
                         if node_id in self.node_labels:
                             self.node_labels[node_id].text = "SPS ERROR"
                             self.node_labels[node_id].set_style({"color": 0xFF0000FF})
@@ -114,84 +115,59 @@ class MyExtension(omni.ext.IExt):
     async def auto_update_loop(self):
         while self._is_running:
             try:
-                # Session einmalig öffnen für alle Requests im Loop (Keep-Alive)
                 async with aiohttp.ClientSession() as session:
                     while self._is_running:
                         await self.update_via_web_api(session)
-                        # Latenz-Tipp: 0.03s entspricht ca. 33fps, was für Web-APIs oft stabiler ist als 0.01s
-                        await asyncio.sleep(0.03) 
+                        await asyncio.sleep(1) 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 print(f"[MazeRunner] Loop Fehler: {e}")
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1)
 
     async def update_via_web_api(self, session):
         headers = {"X-API-KEY": self.api_key, "accept": "application/json"}
         stage = omni.usd.get_context().get_stage()
-        if not stage or not self.nodes: return
 
-        # 1. Sammle alle Node-IDs für den Bulk-Request
-        node_ids = [n.get('node_id') for n in self.nodes if n.get('node_id')]
-        params = {
-            "NodeNames": ",".join(node_ids), 
-            "user": "admin", 
-            "apiKey": self.api_key
-        }
+        for node in self.nodes:
+            if not self._is_running: break
+            node_id = node.get('node_id')
+            label = self.node_labels.get(node_id)
+            if not label: continue
 
-        try:
-            async with session.get(self.api_url_bulk, params=params, headers=headers, timeout=5, ssl=False) as resp:
-                if resp.status == 200:
-                    # Erwartet JSON: {"Node_ID_1": "true", "Node_ID_2": "12.5", ...}
-                    bulk_data = await resp.json()
-                    
-                    for node in self.nodes:
-                        node_id = node.get('node_id')
-                        label = self.node_labels.get(node_id)
-                        if not label or "sending" in label.text: continue
+            params = {"NodeName": node_id, "useHistoricalData": "false", "user": "admin", "apiKey": self.api_key}
 
-                        # Wert aus Bulk-Daten extrahieren
-                        raw_val = bulk_data.get(node_id)
-                        if raw_val is None: continue
-
-                        val = self._parse_value(raw_val)
+            try:
+                async with session.get(self.api_url_get, params=params, headers=headers, timeout=5, ssl=False) as resp:
+                    if resp.status == 200:
+                        data = await resp.text()
+                        val_str = data.replace('"', '').strip()
                         
-                        # UI Update
-                        self.node_values[node_id] = val
-                        label.text = str(val)
-                        label.set_style({"color": 0xFF00FF00 if val is True else 0xFFFFFFFF})
+                        if val_str.lower() == "true": val = True
+                        elif val_str.lower() == "false": val = False
+                        else:
+                            try: val = float(val_str)
+                            except: val = val_str
 
-                        # USD / Prim Update
+                        if "sending" not in label.text:
+                            self.node_values[node_id] = val
+                            label.text = str(val)
+                            label.set_style({"color": 0xFF00FF00 if val is True else 0xFFFFFFFF})
+
                         p_path = node.get("prim_path")
-                        if p_path:
+                        if p_path and stage:
                             prim = stage.GetPrimAtPath(p_path)
                             if prim and prim.IsValid():
                                 attr = prim.GetAttribute(node.get("attribute", "xformOp:translate"))
                                 if attr:
-                                    # Multiplikator Logik (1.0 bei True/An, 0.0 bei False/Aus)
-                                    is_on = (val is True or str(val).lower() == "true" or val == 1.0)
-                                    mult = 1.0 if is_on else 0.0
+                                    mult = 1.0 if (val is True or val == "1.0" or val == 1.0) else 0.0
                                     attr.Set(node.get("target_value", 1.0) * mult)
-                else:
-                    self._set_all_labels_status(f"HTTP {resp.status}")
-        except Exception:
-            self._set_all_labels_status("OFFLINE")
-
-    def _parse_value(self, val_str):
-        """ Konvertiert API-Strings in Python-Typen """
-        s = str(val_str).lower().strip().replace('"', '')
-        if s == "true": return True
-        if s == "false": return False
-        try:
-            return float(s)
-        except:
-            return val_str
-
-    def _set_all_labels_status(self, status_text):
-        """ Setzt alle Labels auf einen Fehlerstatus, wenn nicht gerade gesendet wird """
-        for node_id, label in self.node_labels.items():
-            if "sending" not in label.text:
-                label.text = status_text
+                    else:
+                        if "sending" not in label.text:
+                            label.text = f"HTTP {resp.status}"
+            except Exception:
+                if "sending" not in label.text:
+                    label.text = "OFFLINE"
 
     def on_shutdown(self):
         print("[MazeRunner] Shutdown...")
