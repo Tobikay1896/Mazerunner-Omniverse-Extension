@@ -594,6 +594,10 @@ class MyExtension(omni.ext.IExt):
     # SHUTDOWN
     # =================================================================
     def on_shutdown(self):
+        try:
+            self._suction.reset()
+        except Exception:
+            pass
         self._is_running = False
 
         if self._timeline_sub:

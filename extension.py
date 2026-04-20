@@ -8,7 +8,7 @@ import json
 import asyncio
 import aiohttp
 from datetime import datetime
-
+from .suction import SuctionGripper
 
 async def _cancel_and_await(tasks):
     for task in tasks:
@@ -72,7 +72,7 @@ class MyExtension(omni.ext.IExt):
         self._build_ui()
         self.load_nodes_from_json()
         self._subscribe_timeline()
-
+        self._suction = SuctionGripper(self)
         self._log("Extension gestartet", "info")
         self._log("SIM-Modus aktiv", "info")
 
@@ -234,15 +234,21 @@ class MyExtension(omni.ext.IExt):
         )
 
     def _on_timeline_event(self, event):
-        if event.type == int(omni.timeline.TimelineEventType.PLAY):
-            self._reset_all_to_zero()
-        elif event.type == int(omni.timeline.TimelineEventType.STOP):
+
+        if event.type == int(omni.timeline.TimelineEventType.STOP):
             self._on_sim_stop()
 
     def _on_sim_stop(self):
         self._log("Simulation gestoppt", "info")
+        self._suction.reset()
 
     def _reset_all_to_zero(self):
+        self._log("Simulation gestartet - setze alle Werte auf 0", "info")
+        self._suction.reset()
+
+        stage = omni.usd.get_context().get_stage()
+        if not stage:
+            return
         self._log("Simulation gestartet - setze alle Werte auf 0", "info")
 
         stage = omni.usd.get_context().get_stage()
@@ -392,6 +398,23 @@ class MyExtension(omni.ext.IExt):
 
         node = self._find_node(node_id)
         if not node:
+            return
+
+        # SPEZIALFALL: SAUGGREIFER
+        if node_id == "Sauggreifer_EIN":
+            if self._sim_mode:
+                active = self._suction.toggle()
+                self.node_values[node_id] = active
+                self._set_node_display(node_id, active)
+            else:
+                current_val = self.node_values.get(node_id, False)
+                new_val = not current_val
+                self._log(f"Toggle {node_id} -> {new_val}", "info")
+                if node_id in self.node_labels:
+                    self.node_labels[node_id].text = "  sending..."
+                    self.node_labels[node_id].set_style({"font_size": 12, "color": CLR_YELLOW})
+                t = asyncio.ensure_future(self.send_api_update(node_id, new_val))
+                self._active_tasks.append(t)
             return
 
         mode = node.get("mode", "toggle")
@@ -736,6 +759,10 @@ class MyExtension(omni.ext.IExt):
     # SHUTDOWN
     # =================================================================
     def on_shutdown(self):
+        try:
+            self._suction.reset()
+        except Exception:
+            pass
         self._is_running = False
 
         if self._timeline_sub:

@@ -156,6 +156,7 @@ def find_node(ext, node_id):
 
 
 def on_control_clicked(ext, node_id):
+    
     if not ext._is_running:
         return
 
