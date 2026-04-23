@@ -89,7 +89,6 @@ class MyExtension(omni.ext.IExt):
         with self._window.frame:
             with ui.VStack(spacing=0):
 
-                # HEADER
                 with ui.ZStack(height=50):
                     ui.Rectangle(style={"background_color": CLR_BG_DARK})
                     with ui.HStack():
@@ -117,7 +116,6 @@ class MyExtension(omni.ext.IExt):
 
                 ui.Line(style={"color": CLR_BORDER}, height=1)
 
-                # TOOLBAR
                 with ui.ZStack(height=34):
                     ui.Rectangle(style={"background_color": CLR_BG_MID})
                     with ui.HStack(spacing=6):
@@ -161,7 +159,6 @@ class MyExtension(omni.ext.IExt):
 
                 ui.Line(style={"color": CLR_BORDER}, height=1)
 
-                # COLUMN HEADERS
                 with ui.ZStack(height=22):
                     ui.Rectangle(style={"background_color": CLR_BG_HEADER})
                     with ui.HStack():
@@ -175,13 +172,11 @@ class MyExtension(omni.ext.IExt):
 
                 ui.Line(style={"color": CLR_BORDER}, height=1)
 
-                # NODE LIST
                 with ui.ScrollingFrame(style={"background_color": CLR_BG_MID}):
                     self._list_container = ui.VStack(spacing=0)
 
                 ui.Line(style={"color": CLR_BORDER}, height=1)
 
-                # LOG HEADER
                 with ui.ZStack(height=22):
                     ui.Rectangle(style={"background_color": CLR_BG_DARK})
                     with ui.HStack():
@@ -198,7 +193,6 @@ class MyExtension(omni.ext.IExt):
                         btn_clr.set_clicked_fn(self._clear_log)
                         ui.Spacer(width=14)
 
-                # LOG PANEL
                 with ui.ScrollingFrame(height=110, style={"background_color": 0xFF080C14}):
                     self._log_container = ui.VStack(spacing=0)
 
@@ -257,10 +251,6 @@ class MyExtension(omni.ext.IExt):
         self._reset_all_to_zero()
 
     async def _sim_update_loop(self):
-        """
-        Läuft immer während die Simulation PLAY ist.
-        Hält den Deckel über dem Maze und prüft die Presse.
-        """
         try:
             while self._is_running:
                 try:
@@ -285,7 +275,7 @@ class MyExtension(omni.ext.IExt):
             pass
 
     def _reset_all_to_zero(self):
-        self._log("Simulation gestartet - setze alle Werte auf 0", "info")
+        self._log("Reset", "info")
         self._suction.reset()
 
         stage = omni.usd.get_context().get_stage()
@@ -437,7 +427,6 @@ class MyExtension(omni.ext.IExt):
         if not node:
             return
 
-        # SPEZIALFALL: SAUGGREIFER
         if node_id == "Sauggreifer_EIN":
             if self._sim_mode:
                 active = self._suction.toggle()
@@ -809,6 +798,7 @@ class MyExtension(omni.ext.IExt):
             self._suction.reset()
         except Exception:
             pass
+
         self._is_running = False
 
         if self._timeline_sub:
