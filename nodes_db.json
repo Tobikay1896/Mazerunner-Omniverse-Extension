@@ -40,8 +40,8 @@
             "step_degrees": -93.0
         },
         {
-            "display_name": "Squeezer_start_set",
-            "node_id": "Squeezer_start_set",
+            "display_name": "Squeezer_Start_Set",
+            "node_id": "Squeezer_Start_Set",
             "prim_path": "/World/Production_Line/Presse/PrismaticJoint",
             "attribute": "drive:linear:physics:targetPosition",
             "target_value": -0.022,

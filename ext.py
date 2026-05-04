@@ -1,6 +1,3 @@
-import threading
-import time
-
 import omni.ext
 import omni.ui as ui
 import omni.usd
@@ -496,13 +493,6 @@ async def _step(ext, description: str, delay: float = 1.0):
 # -------------------------------------------------------------------------
 class MyExtension(omni.ext.IExt):
     def on_startup(self, ext_id):
-        # === Eventloop vorbereiten (fix für MQTT Thread) ===
-        try:
-            self._loop = asyncio.get_event_loop_policy().get_event_loop()
-        except RuntimeError:
-            self._loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self._loop)
-            
         self._ext_id = ext_id
 
         current_folder = os.path.dirname(__file__)
@@ -694,27 +684,12 @@ class MyExtension(omni.ext.IExt):
         self._log_lines.append((ts, message, level))
         if len(self._log_lines) > MAX_LOG_LINES:
             self._log_lines = self._log_lines[-MAX_LOG_LINES:]
+        self._rebuild_log()
+        print(f"[MazeRunner] [{ts}] {message}")
 
-        # ✅ Thread‑sicheres Logging
-        try:
-            loop = asyncio.get_running_loop()
-            loop.call_soon_threadsafe(asyncio.create_task, self._rebuild_log())
-        except RuntimeError:
-            # kein aktiver asyncio‑Loop (z. B. MQTT‑Thread)
-            print(f"[MazeRunner] [{ts}] {message}")
-
-
-    async def _rebuild_log(self):
-        try:
-            loop = asyncio.get_running_loop()
-            if loop.is_closed():
-                print(f"[MazeRunner] Loop closed, skipping log.")
-                return
-        except RuntimeError:
-            print(f"[MazeRunner] Loop missing, skipping log.")
+    def _rebuild_log(self):
+        if not hasattr(self, "_log_container"):
             return
-
-        await asyncio.sleep(0.01)  # Warte kurz, damit UI aktualisiert werden kann
         self._log_container.clear()
         color_map = {"log": CLR_TEXT_FAINT, "info": CLR_ACCENT, "error": CLR_RED, "ok": CLR_GREEN}
         with self._log_container:
@@ -724,7 +699,7 @@ class MyExtension(omni.ext.IExt):
 
     def _clear_log(self):
         self._log_lines = []
-        asyncio.ensure_future(self._rebuild_log())
+        self._rebuild_log()
 
     # =================================================================
     # TIMELINE
@@ -962,61 +937,59 @@ class MyExtension(omni.ext.IExt):
         self._log("MQTT Client wird gestartet...", "info")
         try:
             import paho.mqtt.client as mqtt
+            
+            # MQTT Topics für alle Nodes (entsprechend deinem Unity Setup)
+            topics = [f"/PlcNode/Get/{node.get('node_id')}" for node in self.nodes]
+            self._log(f"Abonnierte MQTT Topics: {topics}", "info")
+            
+            # MQTT Client erstellen
             self._mqtt_client = mqtt.Client()
             self._mqtt_client.on_connect = self._on_mqtt_connect
             self._mqtt_client.on_disconnect = self._on_mqtt_disconnect
             self._mqtt_client.on_message = self._on_mqtt_message
             
+            # Verbindung herstellen
             self._mqtt_client.connect(MQTT_BROKER, MQTT_PORT, MQTT_KEEPALIVE)
             self._mqtt_client.loop_start()
             
-            # Kein subscribe hier! Das machen wir im on_connect.
-            self._log("MQTT Client initialisiert (warte auf Verbindung...)", "info")
+            # Abonnieren der Topics
+            for topic in topics:
+                self._mqtt_client.subscribe(topic)
+                self._log(f"MQTT Topic abonniert: {topic}", "info")
+                
+            self._log("MQTT Client gestartet", "ok")
             
+        except ImportError:
+            self._log("MQTT Bibliothek nicht verfügbar", "error")
         except Exception as e:
             self._log(f"MQTT Fehler beim Start: {e}", "error")
-            
-            
-    def _stop_mqtt(self):
-        """Beendet den MQTT‑Client sicher."""
-        try:
-            self._log("MQTT Client wird gestoppt...", "info")
-        except Exception:
-            print("[MazeRunner] MQTT Stop (Log nicht verfügbar)")
-        try:
-            if hasattr(self, "_mqtt_client") and self._mqtt_client:
-                self._mqtt_client.loop_stop()
-                self._mqtt_client.disconnect()
-                self._mqtt_client = None
-        except Exception as e:
-            try:
-                self._log(f"Fehler beim MQTT‑Stop: {e}", "error")
-            except Exception:
-                print(f"[MazeRunner] Fehler beim MQTT‑Stop: {e}")
-        self._mqtt_connected = False
-        try:
-            self._set_status_text("MQTT Inaktiv", CLR_TEXT_DIM)
-        except Exception:
-            pass
-        
-    def _on_mqtt_connect(self, client, userdata, flags, rc):
-        print(f"[MQTT] Verbunden rc={rc}")
-        self._mqtt_connected = (rc == 0)
-        
-        if rc == 0:
-            # Jetzt sicher abonnieren:
-            topics = [f"/PlcNode/Get/{node.get('node_id')}" for node in self.nodes]
-            for topic in topics:
-                client.subscribe(topic)
-                print(f"[MQTT] Abonniert: {topic}") # Direktes Print für die Konsole
-            
-            if self._loop:
-                self._loop.call_soon_threadsafe(
-                    lambda: self._set_status_text("MQTT Verbunden", CLR_GREEN)
-                )
-        else:
-            print(f"[MQTT] Verbindung fehlgeschlagen mit Code {rc}")
 
+    def _stop_mqtt(self):
+        self._log("MQTT Client wird gestoppt...", "info")
+        if self._mqtt_client:
+            self._mqtt_client.loop_stop()
+            self._mqtt_client.disconnect()
+            self._mqtt_client = None
+        self._set_status_text("MQTT Inaktiv", CLR_TEXT_DIM)
+
+    def _on_mqtt_connect(self, client, userdata, flags, rc):
+        self._log(f"MQTT verbunden (rc={rc})", "info")
+        self._mqtt_connected = True
+        self._set_status_text("MQTT Verbunden", CLR_GREEN)
+
+        # ✅ Sicherstellen, dass ein Event Loop existiert
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        # ✅ Jetzt sicher async aufrufen
+        t = asyncio.ensure_future(self._initial_poll_all_nodes())
+        self._active_tasks.append(t)
 
     def _on_mqtt_disconnect(self, client, userdata, rc):
         self._log(f"MQTT getrennt (rc={rc})", "info")
@@ -1025,71 +998,41 @@ class MyExtension(omni.ext.IExt):
 
     def _on_mqtt_message(self, client, userdata, msg):
         try:
+            self._log(f"MQTT Nachricht erhalten: {msg.topic} = {msg.payload.decode('utf-8')}", "info")
             topic = msg.topic
-            # Dekodieren und säubern
-            payload_raw = msg.payload.decode("utf-8").strip().lower()
-            
-            # Die node_id extrahieren (der Teil nach dem letzten Slash)
+            payload = msg.payload.decode("utf-8")
+
+            # Extrahiere node_id aus dem Topic
             node_id = topic.split("/")[-1]
-            
-            # Flexibler Boolean-Check
-            val = payload_raw in ("true", "1", "on")
-            
-            print(f"[MazeRunner] MQTT-Input: {node_id} -> {val}")
 
-            def handle_msg():
-                try:
-                    import omni.usd
-                    
-                    # Nur beim Umschalten des Wertes reagieren
-                    old_val = self.node_values.get(node_id)
-                    if old_val != val:
-                        self.node_values[node_id] = val
-                        self._set_node_display(node_id, val)
-                        
-                        # HARTE LOGIK: Wenn Start_Stepper_Set auf True geht
-                        if node_id == "Start_Stepper_Set" and val is True:
-                            # Pfad direkt aus deinem JSON-Auszug
-                            prim_path = "/World/Production_Line/Drehscheibe/RevoluteJoint"
-                            attr_name = "drive:angular:physics:targetPosition"
-                            
-                            stage = omni.usd.get_context().get_stage()
-                            prim = stage.GetPrimAtPath(prim_path)
-                            
-                            if prim and prim.IsValid():
-                                attr = prim.GetAttribute(attr_name)
-                                if not attr.IsValid():
-                                    # Fallback falls der Name leicht abweicht (manchmal ohne :physics)
-                                    attr = prim.GetAttribute("drive:angular:targetPosition")
+            # Verarbeite die Nachricht
+            val = payload.lower() in ("true", "1", "on")
 
-                                if attr.IsValid():
-                                    curr_pos = attr.Get()
-                                    if curr_pos is None: curr_pos = 0.0
-                                    
-                                    # Um 60 Grad verringern
-                                    new_pos = curr_pos - 60.0
-                                    
-                                    # Wert hart setzen
-                                    attr.Set(new_pos)
-                                    
-                                    # Log zur Bestätigung
-                                    self._log(f"STEPPER: {prim_path} rotiert auf {new_pos}°", "ok")
-                                else:
-                                    self._log(f"ERROR: Attribut {attr_name} nicht gefunden!", "error")
-                            else:
-                                self._log(f"ERROR: Prim unter {prim_path} nicht gefunden!", "error")
+            # Aktualisiere den Wert in node_values
+            if node_id in self.node_values:
+                old_val = self.node_values[node_id]
+                self.node_values[node_id] = val
 
-                        self._log(f"MQTT Update: {node_id} = {val}", "log")
-                except Exception as e:
-                    print(f"[MazeRunner] Kritischer Fehler in handle_msg: {e}")
-                    
-            # Sicherheitscheck für den Loop
-            if self._loop and self._loop.is_running():
-                self._loop.call_soon_threadsafe(handle_msg)
-                
+                # Nur wenn sich der Wert geändert hat, aktualisiere die UI
+                if old_val != val:
+                    # ✅ Aktualisiere die Status-Spalte direkt
+                    if node_id in self.node_labels:
+                        label = self.node_labels[node_id]
+                        if val:
+                            label.text = "  TRUE"
+                            label.set_style({"font_size": 12, "color": CLR_GREEN})
+                        else:
+                            label.text = "  FALSE"
+                            label.set_style({"font_size": 12, "color": CLR_RED})
+
+                    self._log(f"MQTT: {node_id} = {val}", "ok")
+            else:
+                # Falls node_id noch nicht bekannt ist, füge sie hinzu
+                self.node_values[node_id] = val
+                self._log(f"MQTT: Neuer Node {node_id} = {val}", "info")
+
         except Exception as e:
-            print(f"[MazeRunner] Fehler beim Verarbeiten der MQTT-Nachricht: {e}")
-
+            self._log(f"MQTT Nachricht Fehler: {e}", "error")
 
     # =================================================================
     # RESTART
@@ -1288,34 +1231,15 @@ class MyExtension(omni.ext.IExt):
     # UI HELPERS
     # =================================================================
     def _set_node_display(self, node_id, val):
-        """Aktualisiert Statusanzeige und setzt den USD-Wert, wenn TRUE."""
         label = self.node_labels.get(node_id)
         if not label:
             return
-
-        # Immer Anzeige aktualisieren, auch wenn derselbe Wert zweimal kommt
         if val:
             label.text = "  TRUE"
             label.set_style({"font_size": 12, "color": CLR_GREEN})
         else:
             label.text = "  FALSE"
             label.set_style({"font_size": 12, "color": CLR_RED})
-
-        # ✅ automatisch USD‑Attribut setzen
-        try:
-            stage = omni.usd.get_context().get_stage()
-            if not stage:
-                return
-            for node in self.nodes:
-                if node.get("node_id") == node_id:
-                    target_val = float(node.get("target_value", 1.0))
-                    new_val = target_val if val else 0.0
-                    self._set_usd_attr(stage, node, new_val)
-                    self._log(f"[Display→USD] {node_id} -> {new_val}", "info")
-                    break
-        except Exception as e:
-            self._log(f"[Display→USD] Fehler bei {node_id}: {e}", "error")
-
 
     def _set_status_text(self, text, color):
         if not hasattr(self, "_status_label"):
@@ -1413,31 +1337,6 @@ class MyExtension(omni.ext.IExt):
 
         if tasks_to_cancel:
             asyncio.ensure_future(_cancel_and_await(tasks_to_cancel))
-                # ==== Cleanup aller offenen asyncio-Tasks ====
-        try:
-            loop = getattr(self, "_loop", None)
-            if loop and not loop.is_closed():
-                pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
-                for t in pending:
-                    t.cancel()
-                # kurz warten, damit sie abbrechen
-                loop.run_until_complete(asyncio.sleep(0))
-        except Exception as e:
-            print(f"[MazeRunner] Async cleanup Fehler: {e}")
-        
-        self._active_tasks.clear()
-        
-        try:
-            loop = getattr(self, "_loop", None)
-            if loop and not loop.is_closed():
-                pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
-                for t in pending:
-                    t.cancel()
-                # kein run_until_complete hier
-        except Exception as e:
-            print(f"[MazeRunner] Async cleanup Fehler: {e}")
-
-        
 
         print("[MazeRunner] Shutdown.")
 
@@ -1609,10 +1508,10 @@ class MyExtension(omni.ext.IExt):
     # =================================================================
     # HELPER METHODS
     # =================================================================
-    async def _step(self, description: str, delay: float = 1.0):
+    def _step(self, description: str, delay: float = 1.0):
         """Loggt einen Schritt und wartet."""
         self._log(f"[Auto] ▶ {description}", "info")
-        await asyncio.sleep(delay)
+        return asyncio.sleep(delay)
 
     def _set_node(self, node_id: str, value: bool):
         """Setzt einen Toggle/Suction-Node direkt."""
