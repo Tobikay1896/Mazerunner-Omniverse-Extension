@@ -1,199 +1,200 @@
-# routines.py
+"""
+routines.py
+===========
+Hochrangige Choreografien:
+- Gesamtprozess: Kompletter Maze-Runner-Ablauf
+- BA_Start: Schwenkarm-Sequenz für Deckel-Pickup
+"""
+
 import asyncio
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Hilfsfunktionen
-# ─────────────────────────────────────────────────────────────────────────────
 
-def _find_node(ext, node_id: str):
-    for node in ext.nodes:
-        if node.get("node_id") == node_id:
-            return node
-    return None
+class Routines:
+    """Vordefinierte automatisierte Abläufe."""
 
-def _set_node(ext, node_id: str, value: bool):
-    """Setzt einen Toggle/Suction-Node direkt."""
-    node = _find_node(ext, node_id)
-    if not node:
-        ext._log(f"[Routine] Node nicht gefunden: {node_id}", "error")
-        return False
+    def __init__(self, ext):
+        # Wir verwenden direkt das Extension-Objekt für Zugriff auf
+        # suction, node_manager und Logging.
+        self._ext = ext
+        self._gesamt_running = False
+        self._ba_running = False
 
-    if node_id == "Sauggreifer_EIN":
-        current = ext._suction.is_active
-        if value and not current:
-            ext._suction.attach()
-            ext.node_values[node_id] = True
-            ext._set_node_display(node_id, True)
-        elif not value and current:
-            ext._suction.detach()
-            ext.node_values[node_id] = False
-            ext._set_node_display(node_id, False)
-        return True
+    # ---------------------------------------------------------------
+    # GESAMTPROZESS
+    # ---------------------------------------------------------------
+    def start_gesamtprozess(self):
+        """Wird vom UI-Button aufgerufen."""
+        if not self._ext.sim_mode:
+            self._ext.logger.log("Simulation nicht aktiv – Gesamtprozess nicht gestartet", "error")
+            return
+        if self._gesamt_running:
+            self._ext.logger.log("Gesamtprozess läuft bereits", "error")
+            return
+        self._ext.logger.log("▶ Gesamtprozess → Routine gestartet", "info")
+        asyncio.ensure_future(self._run_gesamtprozess())
 
-    ext.node_values[node_id] = value
-    ext._set_node_display(node_id, value)
-    ext._apply_usd_for_node(node_id, value)
-    ext._log(f"[Routine] {node_id} = {value}", "ok")
-    return True
+    async def _run_gesamtprozess(self):
+        self._gesamt_running = True
+        log = self._ext.logger.log
+        log("═══ Routine GESAMTPROZESS GESTARTET ═══", "info")
 
-def _trigger_impulse(ext, node_id: str):
-    """Führt einen Step-Impuls für einen impulse-Mode Node aus."""
-    node = _find_node(ext, node_id)
-    if not node:
-        ext._log(f"[Routine] Impulse-Node nicht gefunden: {node_id}", "error")
-        return
-    if node.get("mode") != "impulse":
-        ext._log(f"[Routine] Node {node_id} ist kein impulse-Mode", "error")
-        return
-    ext._execute_step_impulse(node_id, node)
-    ext._log(f"[Routine] Impulse ausgelöst: {node_id}", "ok")
+        try:
+            # Phase 1 – BM ausfahren
+            await self._step("Phase 1 – BM ausfahren (TRUE)")
+            self._set("BM_MoveFront_Set", True);    await asyncio.sleep(0.5)
 
-async def _step(ext, description: str, delay: float = 1.0):
-    """Loggt einen Schritt und wartet."""
-    ext._log(f"[Auto] ▶ {description}", "info")
-    await asyncio.sleep(delay)
+            # Phase 2 – BM einfahren
+            await self._step("Phase 2 – BM einfahren (FALSE)")
+            self._set("BM_MoveFront_Set", False);   await asyncio.sleep(0.5)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Routine: Deckel-Pickup (BA_Start)
-# ─────────────────────────────────────────────────────────────────────────────
+            # Phase 3 – DS Step
+            await self._step("Phase 3 – DS Step")
+            self._impulse("Start_Stepper_Set");     await asyncio.sleep(1.0)
 
-async def routine_ba_start(ext):
-    if getattr(ext, "_routine_ba_running", False):
-        ext._log("[Routine] BA_Start läuft bereits – ignoriert", "error")
-        return
+            # Phase 4 – KM Trigger
+            await self._step("Phase 4 – KM Trigger")
+            self._impulse("KM_Stepper_Start");      await asyncio.sleep(3.5)
 
-    ext._routine_ba_running = True
-    ext._log("═══ Routine BA_Start GESTARTET ═══", "info")
+            # Phase 5 – DS Step
+            await self._step("Phase 5 – DS Step")
+            self._impulse("Start_Stepper_Set");     await asyncio.sleep(1.0)
 
-    try:
-        # Phase 1: Schwenkarm runter
-        await _step(ext, "Phase 1 – Schwenkarm runter (Schwenkarm_Deckel_trans → TRUE)")
-        _set_node(ext, "Schwenkarm_Deckel_trans", True)
-        await asyncio.sleep(0.5)
+            # Phase 10d – Deckel dynamisch
+            await self._step("Phase 10d – Deckel dynamisch machen")
+            self._ext.suction.release_dynamic();    await asyncio.sleep(0.5)
 
-        # Phase 2: Sauggreifer EIN
-        await _step(ext, "Phase 2 – Sauggreifer EIN (Sauggreifer_EIN → TRUE)")
-        _set_node(ext, "Sauggreifer_EIN", True)
-        await asyncio.sleep(0.5)
+            # Phase 6/7 – DM aus/ein
+            await self._step("Phase 6 – DM ausfahren")
+            self._set("DM_MoveFront_Set", True);    await asyncio.sleep(0.5)
+            await self._step("Phase 7 – DM einfahren")
+            self._set("DM_MoveFront_Set", False);   await asyncio.sleep(0.5)
 
-        # Phase 3: Schwenkarm hoch
-        await _step(ext, "Phase 3 – Schwenkarm hoch (Schwenkarm_Deckel_trans → FALSE)")
-        _set_node(ext, "Schwenkarm_Deckel_trans", False)
-        await asyncio.sleep(0.5)
+            # Phase 8 – BA_Start
+            await self._step("Phase 8 – BA_Start Routine", delay=0.0)
+            await self._run_ba_start();             await asyncio.sleep(0.5)
 
-        # Phase 4: Schwenkarm schwenken
-        await _step(ext, "Phase 4 – Schwenkarm schwenken (Schwenkarm_Deckel_rot → TRUE)")
-        _set_node(ext, "Schwenkarm_Deckel_rot", True)
-        await asyncio.sleep(0.5)
-        
-        # Schwenkarm wieder absenken (Fix für Deckel-Ablage)
-        await _step(ext, "Phase 4b – Schwenkarm senken (Schwenkarm_Deckel_trans → TRUE)")
-        _set_node(ext, "Schwenkarm_Deckel_trans", True)
-        await asyncio.sleep(0.5)
+            # Phase 9
+            await self._step("Phase 9 – DS Step")
+            self._impulse("Start_Stepper_Set");     await asyncio.sleep(0.5)
 
-        # Phase 5: Sauggreifer AUS
-        await _step(ext, "Phase 5 – Sauggreifer AUS (Sauggreifer_EIN → FALSE)")
-        _set_node(ext, "Sauggreifer_EIN", False)
-        await asyncio.sleep(0.5)
-        
-        # Phase 6: Schwenkarm hoch
-        await _step(ext, "Phase 3 – Schwenkarm hoch (Schwenkarm_Deckel_trans → FALSE)")
-        _set_node(ext, "Schwenkarm_Deckel_trans", False)
-        await asyncio.sleep(0.5)
-        
-        # Phase 4: Schwenkarm schwenken
-        await _step(ext, "Phase 4 – Schwenkarm schwenken (Schwenkarm_Deckel_rot → False)")
-        _set_node(ext, "Schwenkarm_Deckel_rot", False)
-        await asyncio.sleep(0.5)
+            # Phase 10 – Squeeze
+            await self._step("Phase 10 – Squeeze EIN")
+            self._set("Squeezer_Start_Set", True)
 
-        ext._log("═══ Routine BA_Start ABGESCHLOSSEN ✅ ═══", "ok")
+            await self._step("Phase 10b – Deckel nach Squeeze absetzen")
+            self._ext.suction.press_down(z_down=0.002); await asyncio.sleep(0.5)
 
-    except asyncio.CancelledError:
-        ext._log("[Routine] BA_Start ABGEBROCHEN", "error")
-        raise
-    except Exception as e:
-        ext._log(f"[Routine] BA_Start FEHLER: {e}", "error")
-    finally:
-        ext._routine_ba_running = False
+            await self._step("Phase 10c – Squeeze AUS")
+            self._set("Squeezer_Start_Set", False); await asyncio.sleep(1.0)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Routine: Gesamtprozess / Automatik
-# ─────────────────────────────────────────────────────────────────────────────
+            # Phase 11
+            await self._step("Phase 11 – DS Step")
+            self._impulse("Start_Stepper_Set");     await asyncio.sleep(0.5)
 
-async def routine_gesamtprozess(ext):
-    if getattr(ext, "_routine_gesamt_running", False):
-        ext._log("[Routine] Gesamtprozess läuft bereits – ignoriert", "error")
-        return
+            log("═══ Routine GESAMTPROZESS ABGESCHLOSSEN ✅ ═══", "ok")
 
-    ext._routine_gesamt_running = True
-    ext._log("═══ Routine GESAMTPROZESS GESTARTET ═══", "info")
+        except asyncio.CancelledError:
+            log("[Routine] Gesamtprozess ABGEBROCHEN", "error"); raise
+        except Exception as e:
+            log(f"[Routine] Gesamtprozess FEHLER: {e}", "error")
+        finally:
+            self._gesamt_running = False
 
-    try:
-        # Phase 1: BM ausfahren
-        await _step(ext, "Phase 1 – BM ausfahren (BM_MoveFront_Set → TRUE)")
-        _set_node(ext, "BM_MoveFront_Set", True)
-        await asyncio.sleep(0.5)
+    # ---------------------------------------------------------------
+    # BA_START
+    # ---------------------------------------------------------------
+    async def _run_ba_start(self):
+        if self._ba_running:
+            self._ext.logger.log("[Routine] BA_Start läuft bereits – ignoriert", "error")
+            return
 
-        # Phase 2: BM einfahren
-        await _step(ext, "Phase 2 – BM einfahren (BM_MoveFront_Set → FALSE)")
-        _set_node(ext, "BM_MoveFront_Set", False)
-        await asyncio.sleep(0.5)
+        self._ba_running = True
+        log = self._ext.logger.log
+        log("═══ Routine BA_Start GESTARTET ═══", "info")
 
-        # Phase 3: DS Step (Nur 1x statt 3x)
-        await _step(ext, "Phase 3 – DS Step (Start_Stepper_Set)")
-        _trigger_impulse(ext, "Start_Stepper_Set")
-        await asyncio.sleep(1.0)
+        try:
+            await self._step("Schwenkarm runter")
+            self._set("Schwenkarm_Deckel_trans", True);   await asyncio.sleep(0.5)
 
-        # Phase 4: KM Trigger
-        await _step(ext, "Phase 4 – KM Trigger (KM_Stepper_Start)")
-        _trigger_impulse(ext, "KM_Stepper_Start")
-        await asyncio.sleep(3.5)
+            await self._step("Sauggreifer EIN")
+            self._set("Sauggreifer_EIN", True);           await asyncio.sleep(0.5)
 
-        # Phase 5: DS Step (Nur 1x statt 3x)
-        await _step(ext, "Phase 5 – DS Step (Start_Stepper_Set)")
-        _trigger_impulse(ext, "Start_Stepper_Set")
-        await asyncio.sleep(1.0)
+            await self._step("Schwenkarm hoch")
+            self._set("Schwenkarm_Deckel_trans", False);  await asyncio.sleep(0.5)
 
-        # Phase 6: DM ausfahren
-        await _step(ext, "Phase 6 – DM ausfahren (DM_MoveFront_Set → TRUE)")
-        _set_node(ext, "DM_MoveFront_Set", True)
-        await asyncio.sleep(0.5)
+            await self._step("Schwenkarm schwenken")
+            self._set("Schwenkarm_Deckel_rot", True);     await asyncio.sleep(0.5)
 
-        # Phase 7: DM einfahren
-        await _step(ext, "Phase 7 – DM einfahren (DM_MoveFront_Set → FALSE)")
-        _set_node(ext, "DM_MoveFront_Set", False)
-        await asyncio.sleep(0.5)
+            await self._step("Schwenkarm senken (Fix für Ablage)")
+            self._set("Schwenkarm_Deckel_trans", True);   await asyncio.sleep(0.5)
 
-        # Phase 8: BA_Start Routine
-        await _step(ext, "Phase 8 – BA_Start Routine wird aufgerufen …", delay=0.0)
-        await routine_ba_start(ext)
-        await asyncio.sleep(0.5)
+            await self._step("Sauggreifer AUS")
+            self._set("Sauggreifer_EIN", False);          await asyncio.sleep(0.5)
 
-        # Phase 9: DS Step (Nur 1x statt 3x)
-        await _step(ext, "Phase 9 – DS Step (Start_Stepper_Set)")
-        _trigger_impulse(ext, "Start_Stepper_Set")
-        await asyncio.sleep(0.5)
+            await self._step("Schwenkarm hoch")
+            self._set("Schwenkarm_Deckel_trans", False);  await asyncio.sleep(0.5)
 
-        # Phase 10: Squeeze
-        await _step(ext, "Phase 10 – Squeeze EIN (Squeezer_start_set → TRUE)")
-        _set_node(ext, "Squeezer_start_set", True)
-        await asyncio.sleep(1.0)
+            await self._step("Schwenkarm zurückschwenken")
+            self._set("Schwenkarm_Deckel_rot", False);    await asyncio.sleep(0.5)
 
-        await _step(ext, "Phase 10 – Squeeze AUS (Squeezer_start_set → FALSE)")
-        _set_node(ext, "Squeezer_start_set", False)
-        await asyncio.sleep(1.0)
+            log("═══ Routine BA_Start ABGESCHLOSSEN ✅ ═══", "ok")
 
-        # Phase 11: DS Step (Nur 1x statt 5x)
-        await _step(ext, "Phase 11 – DS Step (Start_Stepper_Set)")
-        _trigger_impulse(ext, "Start_Stepper_Set")
-        await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            log("[Routine] BA_Start ABGEBROCHEN", "error"); raise
+        except Exception as e:
+            log(f"[Routine] BA_Start FEHLER: {e}", "error")
+        finally:
+            self._ba_running = False
 
-        ext._log("═══ Routine GESAMTPROZESS ABGESCHLOSSEN ✅ ═══", "ok")
+    # ---------------------------------------------------------------
+    # Helpers
+    # ---------------------------------------------------------------
+    async def _step(self, description: str, delay: float = 1.0):
+        """Loggt einen Schritt und wartet."""
+        self._ext.logger.log(f"[Auto] ▶ {description}", "info")
+        await asyncio.sleep(delay)
 
-    except asyncio.CancelledError:
-        ext._log("[Routine] Gesamtprozess ABGEBROCHEN", "error")
-        raise
-    except Exception as e:
-        ext._log(f"[Routine] Gesamtprozess FEHLER: {e}", "error")
-    finally:
-        ext._routine_gesamt_running = False
+    def _set(self, node_id: str, value: bool):
+        """Setzt einen Toggle/Suction-Node direkt (analog _set_node aus Original)."""
+        nm = self._ext.node_manager
+        suction = self._ext.suction
+        log = self._ext.logger.log
+
+        node = nm.find(node_id)
+        if not node:
+            log(f"[Routine] Node nicht gefunden: {node_id}", "error")
+            return
+
+        # Sonderfall Sauggreifer
+        if node_id == "Sauggreifer_EIN":
+            current = suction.is_active
+            if value and not current:
+                suction.attach()
+                nm.node_values[node_id] = True
+                nm.set_display(node_id, True)
+            elif not value and current:
+                suction.detach()
+                nm.node_values[node_id] = False
+                nm.set_display(node_id, False)
+            return
+
+        nm.node_values[node_id] = value
+        nm.set_display(node_id, value)
+        nm.apply_usd_for_node(node_id, value)
+        log(f"[Routine] {node_id} = {value}", "ok")
+
+    def _impulse(self, node_id: str):
+        """Triggert einen STEP-Impuls (analog _trigger_impulse aus Original)."""
+        nm = self._ext.node_manager
+        log = self._ext.logger.log
+
+        node = nm.find(node_id)
+        if not node:
+            log(f"[Routine] Impulse-Node nicht gefunden: {node_id}", "error")
+            return
+        if node.get("mode") != "impulse":
+            log(f"[Routine] Node {node_id} ist kein impulse-Mode", "error")
+            return
+
+        self._ext.execute_step_impulse(node_id, node)
+        log(f"[Routine] Impulse ausgelöst: {node_id}", "ok")
