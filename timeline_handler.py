@@ -93,7 +93,7 @@ class TimelineHandler:
         """Setzt alle Werte (USD + Labels) auf 0 nach Simulationsstop."""
         from .constants import CLR_RED, CLR_TEXT_DIM
         self._logger.log("Simulation gestoppt - setze alle Werte auf 0", "info")
-        self._suction.reset()
+        # reset() wurde bereits in _on_stop() aufgerufen
 
         stage = omni.usd.get_context().get_stage()
         if not stage:

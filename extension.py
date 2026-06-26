@@ -103,8 +103,7 @@ class MyExtension(omni.ext.IExt):
 
     async def _init_suction(self):
         """Stage-Ready abwarten, dann Deckel-Startposition sichern und dynamisch schalten."""
-        import asyncio as _asyncio
-        await _asyncio.sleep(0.5)
+        await asyncio.sleep(0.5)
         self.suction.save_start_position()
         self.suction._set_target_kinematic(False)
 
@@ -218,7 +217,17 @@ class MyExtension(omni.ext.IExt):
 
         mode = node.get("mode", "toggle")
 
-        if mode == "impulse":
+        if mode == "routine":
+            if not self.sim_mode:
+                self.logger.log("Routinen nur im SIM-Modus verfügbar", "error")
+                return
+            if node_id == "BA_Start":
+                self.logger.log("Manueller BA_Start", "info")
+                t = asyncio.ensure_future(self.routines._run_ba_start())
+                self._active_tasks.append(t)
+            return
+
+        elif mode == "impulse":
             self.logger.log(f"Manueller Step-Impuls: {node_id}", "info")
             self.execute_step_impulse(node_id, node)
             if not self.sim_mode:
@@ -243,7 +252,6 @@ class MyExtension(omni.ext.IExt):
             if self.sim_mode:
                 self.node_manager.node_values[node_id] = new_val
                 self.node_manager.set_display(node_id, new_val)
-                self.node_manager.apply_usd_for_node(node_id, new_val)
                 self.logger.log(f"SIM: {node_id} = {new_val}", "ok")
             else:
                 t = asyncio.ensure_future(self.api.send_set(node_id, new_val, self.sim_mode))

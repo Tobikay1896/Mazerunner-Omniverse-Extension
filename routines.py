@@ -47,9 +47,9 @@ class Routines:
         log("═══ Routine GESAMTPROZESS GESTARTET ═══", "info")
 
         try:
-            # Phase 1 – BM ausfahren
+            # Phase 1 – BM ausfahren und 5 Sekunden halten
             await self._step("Phase 1 – BM ausfahren (TRUE)")
-            self._set("BM_MoveFront_Set", True);    await asyncio.sleep(0.5)
+            self._set("BM_MoveFront_Set", True);    await asyncio.sleep(10.0)
 
             # Phase 2 – BM einfahren
             await self._step("Phase 2 – BM einfahren (FALSE)")
@@ -188,7 +188,6 @@ class Routines:
 
         nm.node_values[node_id] = value
         nm.set_display(node_id, value)
-        nm.apply_usd_for_node(node_id, value)
         log(f"[Routine] {node_id} = {value}", "ok")
 
     def _impulse(self, node_id: str):

@@ -30,18 +30,19 @@ CLR_BORDER      = 0xFF1A2840   # Trennlinien
 MAX_LOG_LINES = 80   # Maximale Anzahl Log-Zeilen im UI
 
 # -------------------------------------------------------------------------
-# MQTT-Konfiguration (entspricht Unity-Setup)
+# MQTT-Konfiguration (entspricht Unity-Setup / HS Rhein-Main)
 # -------------------------------------------------------------------------
 MQTT_BROKER     = "digitaltwinservice.de"
 MQTT_PORT       = 1883
 MQTT_KEEPALIVE  = 60
+MQTT_WS_URL     = "ws://digitaltwinservice.de:9001/mqtt"  # WebSocket-Transport
 
 # -------------------------------------------------------------------------
 # REST-API-Endpunkte
 # -------------------------------------------------------------------------
 API_URL_GET = "https://digitaltwinservice.de/api/Database/GetValue"
 API_URL_SET = "https://digitaltwinservice.de/api/Database/SetValue"
-API_KEY     = "2b56f658-b11f-4067-9537-631bf27a30f0"
+API_KEY     = "2b56f658-b11f-4067-9537-631bf27a30f0"       # persönlichen DigitalTwinApp - API-Schluessel setzen
 
 # -------------------------------------------------------------------------
 # USD-Pfade für den Sauggreifer und das Pick-/Place-Setup

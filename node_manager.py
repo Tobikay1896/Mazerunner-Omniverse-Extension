@@ -8,11 +8,9 @@ Verwaltet:
 - USD-Attributzugriff (lesen/schreiben)
 """
 
-import os
 import json
 import omni.usd
 import omni.ui as ui
-from pxr import Sdf
 
 from .constants import (
     CLR_BG_ROW_A, CLR_BG_ROW_B, CLR_TEXT, CLR_TEXT_DIM, CLR_TEXT_FAINT,
@@ -84,6 +82,7 @@ class NodeManager:
             "toggle":           ("TOGGLE",  CLR_TEXT_DIM),
             "impulse":          ("STEP",    CLR_ACCENT),
             "velocity_impulse": ("VEL-IMP", CLR_ORANGE),
+            "routine":          ("ROUTINE", CLR_GREEN),
         }
 
         # Zeilen im UI aufbauen
@@ -106,7 +105,12 @@ class NodeManager:
                         self.node_labels[node_id] = lbl
                         ui.Spacer()
 
-                        btn_text = "Trigger" if mode in ("impulse", "velocity_impulse") else "Toggle"
+                        if mode in ("impulse", "velocity_impulse"):
+                            btn_text = "Trigger"
+                        elif mode == "routine":
+                            btn_text = "Start"
+                        else:
+                            btn_text = "Toggle"
                         btn = ui.Button(btn_text, width=70, height=22)
                         btn.set_style({
                             "background_color": 0xFF1A2840,
@@ -134,7 +138,7 @@ class NodeManager:
 
     # ---------------------------------------------------------------
     def set_display(self, node_id, val):
-        """Aktualisiert das Status-Label + setzt USD-Attribut entsprechend."""
+        """Aktualisiert das Status-Label und synchronisiert das USD-Attribut."""
         label = self.node_labels.get(node_id)
         if not label:
             return
@@ -146,15 +150,8 @@ class NodeManager:
             label.text = "  FALSE"
             label.set_style({"font_size": 12, "color": CLR_RED})
 
-        # USD synchron halten
         try:
-            stage = omni.usd.get_context().get_stage()
-            if not stage:
-                return
-            node = self.find(node_id)
-            if node:
-                target_val = float(node.get("target_value", 1.0))
-                self.set_usd_attr(stage, node, target_val if val else 0.0)
+            self.apply_usd_for_node(node_id, val)
         except Exception as e:
             self._logger.log(f"[Display→USD] Fehler bei {node_id}: {e}", "error")
 

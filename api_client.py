@@ -26,7 +26,6 @@ class APIClient:
         if sim_mode:
             self._nm.node_values[node_id] = value
             self._nm.set_display(node_id, value)
-            self._nm.apply_usd_for_node(node_id, value)
             return
 
         headers = {"X-API-KEY": API_KEY, "accept": "application/json"}
@@ -45,7 +44,6 @@ class APIClient:
                     if resp.status == 200:
                         self._nm.node_values[node_id] = value
                         self._nm.set_display(node_id, value)
-                        self._nm.apply_usd_for_node(node_id, value)
                         self._logger.log(f"Set OK: {node_id} = {value}", "ok")
                     else:
                         self._logger.log(f"Set Fehler {resp.status}: {node_id}", "error")

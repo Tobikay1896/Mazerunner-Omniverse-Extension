@@ -21,7 +21,6 @@ class UIBuilder:
     def __init__(self):
         self.window = None
         self.status_label = None
-        self.poll_label = None
         self.sim_btn = None
         self.node_count_label = None
         self.list_container = None
@@ -82,11 +81,6 @@ class UIBuilder:
                         "SIM-Modus aktiv",
                         style={"font_size": 11, "color": CLR_GREEN},
                         height=16, alignment=ui.Alignment.RIGHT,
-                    )
-                    self.poll_label = ui.Label(
-                        "Polls: 0",
-                        style={"font_size": 10, "color": CLR_TEXT_FAINT},
-                        height=14, alignment=ui.Alignment.RIGHT,
                     )
                 ui.Spacer(width=14)
 
