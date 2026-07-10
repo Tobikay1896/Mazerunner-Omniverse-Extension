@@ -102,7 +102,7 @@ Jede Zeile entspricht einem Maschinenelement aus `nodes_db.json`:
 | `api_client.py` | REST-API-Aufrufe (GET/SET) gegen digitaltwinservice.de |
 | `mqtt_handler.py` | MQTT-Subscriptions und Callback-Verarbeitung |
 | `websocket_mqtt.py` | Minimaler MQTT-Client über WebSocket-Transport |
-| `suction_gripper.py` | Physikalisches Greifen via FixedJoint (USD/Physics) |
+| `deckel_joint_handler.py` | Deckel-Joint-Verwaltung via FixedJoint (USD/Physics) |
 | `timeline_handler.py` | Reaktion auf Play/Stop der Omniverse-Timeline |
 | `routines.py` | Vordefinierte automatisierte Abläufe (Gesamtprozess, BA_Start) |
 | `logger.py` | Thread-sicherer Log-Bereich im UI |

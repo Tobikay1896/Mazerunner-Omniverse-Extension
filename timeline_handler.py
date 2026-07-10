@@ -7,15 +7,15 @@ Reagiert auf PLAY/STOP der Omniverse-Timeline:
 """
 
 import asyncio
-import omni.timeline
-import omni.usd
+import omni.timeline # type: ignore
+import omni.usd # type: ignore
 
 
 class TimelineHandler:
     """Verbindet die Omniverse-Timeline mit der Simulationslogik."""
 
-    def __init__(self, suction, node_manager, logger):
-        self._suction = suction
+    def __init__(self, deckel_joint, node_manager, logger):
+        self._deckel_joint = deckel_joint
         self._nm = node_manager
         self._logger = logger
         self._timeline_sub = None
@@ -44,7 +44,7 @@ class TimelineHandler:
     def _on_event(self, event):
         if event.type == int(omni.timeline.TimelineEventType.PLAY):
             # Sauggreifer-Reset: alle Joints löschen, Deckel auf Startposition, dynamisch
-            self._suction.reset()
+            self._deckel_joint.reset()
             # Vorhandenen Loop ggf. abbrechen
             if self._sim_update_task and not self._sim_update_task.done():
                 self._sim_update_task.cancel()
@@ -62,7 +62,7 @@ class TimelineHandler:
         if self._sim_update_task and not self._sim_update_task.done():
             self._sim_update_task.cancel()
             self._sim_update_task = None
-        self._suction.reset()
+        self._deckel_joint.reset()
         self._reset_all_to_zero()
 
     # ---------------------------------------------------------------
@@ -71,8 +71,8 @@ class TimelineHandler:
         try:
             while self._is_running:
                 try:
-                    self._suction.update_hold_position()
-                    self._suction.wait_and_press_if_ready(
+                    self._deckel_joint.update_hold_position()
+                    self._deckel_joint.wait_and_press_if_ready(
                         press_prim_path="/World/Production_Line/Presse/PrismaticJoint",
                         target_attr="drive:linear:physics:targetPosition",
                         reached_value=-0.035,

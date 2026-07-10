@@ -1,7 +1,7 @@
 """
-suction_gripper.py
-==================
-Modelliert den Sauggreifer:
+deckel_joint_handler.py
+=======================
+Verwaltet den FixedJoint zwischen Sauggreifer und Deckel (USD/Physics):
 - Aufnehmen (attach)
 - Halten über dem Maze (hold_on_maze / update_hold_position)
 - Pressen (press_down / wait_and_press_if_ready)
@@ -12,17 +12,38 @@ Modelliert den Sauggreifer:
 import omni.usd
 from pxr import Sdf, UsdPhysics, UsdGeom, Gf, Usd
 
-from .constants import (
-    SUCTION_TARGET_PATH, SUCTION_GRIPPER_MESH_PATH,
-    SUCTION_JOINT_PATH, PLACE_TARGET_PATH,
-    PLACE_OFFSET_X, PLACE_OFFSET_Y, PLACE_OFFSET_Z,
-    DECKEL_HALF_HEIGHT, SAFETY_OFFSET,
-    DECKEL_START_LOCAL_POS,
+# -------------------------------------------------------------------------
+# USD-Pfade für den Deckel-Joint und das Pick-/Place-Setup
+# -------------------------------------------------------------------------
+SUCTION_TARGET_PATH       = "/World/Production_Line/Deckelmagazin/Deckel"
+SUCTION_GRIPPER_MESH_PATH = (
+    "/World/Production_Line/Schwenkarm_Deckel/"
+    "Schwenkarm_Deckel_move_translatory/"
+    "Schwenkarm_Deckel_move_rotatory/"
+    "tn__Saubnapf1_zH/tn__Volumenkrper2_gm2/Mesh"
 )
+SUCTION_JOINT_PATH        = "/World/Production_Line/SaugnapfDeckelJoint"
+PLACE_TARGET_PATH         = "/World/Production_Line/Mazemagazin/Maze"
+
+# -------------------------------------------------------------------------
+# Geometrische Offsets für das Aufsetzen des Deckels
+# -------------------------------------------------------------------------
+PLACE_OFFSET_X     = 0.0
+PLACE_OFFSET_Y     = 0.0
+PLACE_OFFSET_Z     = 0.0
+DECKEL_HALF_HEIGHT = 0.0025   # 5 mm / 2 → halbe Deckelhöhe
+SAFETY_OFFSET      = 0.0005   # 0.5 mm Sicherheitsabstand
+
+# -------------------------------------------------------------------------
+# Deckel-Startposition (lokal relativ zu /World/Production_Line/Deckelmagazin)
+# Aus dem Isaac-Sim-Property-Panel abgelesen. Wird beim Reset als Ziel gesetzt.
+# -------------------------------------------------------------------------
+DECKEL_START_LOCAL_POS = (-72.15972, -0.93587, 7.15066)
+DECKEL_START_LOCAL_ROT = (0.0, 0.0, 0.0)   # Euler XYZ
 
 
-class SuctionGripper:
-    """Kapselt alle USD/Physics-Operationen rund um den Saugnapf."""
+class DeckelJointHandler:
+    """Kapselt alle USD/Physics-Operationen für den Deckel-FixedJoint."""
 
     def __init__(self, logger=None):
         self._logger = logger          # Optionaler Logger
@@ -39,7 +60,7 @@ class SuctionGripper:
         if self._logger:
             self._logger.log(msg, level)
         else:
-            print(f"[Suction] {msg}")
+            print(f"[DeckelJoint] {msg}")
 
     # ---------------------------------------------------------------
     # USD-Helfer
@@ -146,7 +167,7 @@ class SuctionGripper:
 
     # ---------------------------------------------------------------
     def reset(self):
-        """Setzt den Gripper komplett zurück: Joint entfernen, Deckel auf Startposition, dynamisch."""
+        """Setzt den Handler komplett zurück: Joint entfernen, Deckel auf Startposition, dynamisch."""
         self.remove_joint()
         self._restore_start_position()
         self._set_target_kinematic(False)
@@ -312,16 +333,16 @@ class SuctionGripper:
         return False
 
     def detach(self):
-        """Sauggreifer aus: Joint entfernen, Deckel folgt Maze."""
+        """Joint trennen: Deckel folgt dem Maze."""
         self.hold_on_maze()
         self.remove_joint()
         self._active = False
         self._held = True
         self._placed = True
-        self._log("Sauggreifer AUS - Deckel folgt Maze", "ok")
+        self._log("Deckel-Joint AUS - Deckel folgt Maze", "ok")
 
     def attach(self):
-        """Sauggreifer ein: FixedJoint zwischen Greifer-Body und Deckel."""
+        """Joint setzen: FixedJoint zwischen Greifer-Body und Deckel."""
         stage = self._stage()
         if not stage:
             return False
@@ -330,7 +351,7 @@ class SuctionGripper:
         gripper_prim = stage.GetPrimAtPath(SUCTION_GRIPPER_MESH_PATH)
         target_prim = stage.GetPrimAtPath(SUCTION_TARGET_PATH)
         if not gripper_prim.IsValid() or not target_prim.IsValid():
-            self._log("Gripper/Deckel-Prim nicht gefunden", "error")
+            self._log("Greifer/Deckel-Prim nicht gefunden", "error")
             return False
 
         body0_prim = self._find_rigidbody_ancestor(gripper_prim)
@@ -388,7 +409,7 @@ class SuctionGripper:
         self._held = False
         self._placed = False
         self._press_offset_z = 0.0
-        self._log("Sauggreifer EIN ✅", "ok")
+        self._log("Deckel-Joint EIN ✅", "ok")
         return True
 
     def toggle(self):

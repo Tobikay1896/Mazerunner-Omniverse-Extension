@@ -69,11 +69,11 @@ class Routines:
 
             # Phase 10d – Deckel dynamisch
             await self._step("Phase 10d – Deckel dynamisch machen")
-            self._ext.suction.release_dynamic();    await asyncio.sleep(0.5)
+            self._ext.deckel_joint.release_dynamic();    await asyncio.sleep(0.5)
 
             # Phase 6/7 – DM aus/ein
             await self._step("Phase 6 – DM ausfahren")
-            self._set("DM_MoveFront_Set", True);    await asyncio.sleep(0.5)
+            self._set("DM_MoveFront_Set", True);    await asyncio.sleep(10.0)
             await self._step("Phase 7 – DM einfahren")
             self._set("DM_MoveFront_Set", False);   await asyncio.sleep(0.5)
 
@@ -90,7 +90,7 @@ class Routines:
             self._set("Squeezer_Start_Set", True)
 
             await self._step("Phase 10b – Deckel nach Squeeze absetzen")
-            self._ext.suction.press_down(z_down=0.002); await asyncio.sleep(0.5)
+            self._ext.deckel_joint.press_down(z_down=0.002); await asyncio.sleep(0.5)
 
             await self._step("Phase 10c – Squeeze AUS")
             self._set("Squeezer_Start_Set", False); await asyncio.sleep(1.0)
@@ -163,9 +163,9 @@ class Routines:
         await asyncio.sleep(delay)
 
     def _set(self, node_id: str, value: bool):
-        """Setzt einen Toggle/Suction-Node direkt (analog _set_node aus Original)."""
+        """Setzt einen Toggle-Node oder den Deckel-Joint direkt."""
         nm = self._ext.node_manager
-        suction = self._ext.suction
+        deckel_joint = self._ext.deckel_joint
         log = self._ext.logger.log
 
         node = nm.find(node_id)
@@ -173,15 +173,15 @@ class Routines:
             log(f"[Routine] Node nicht gefunden: {node_id}", "error")
             return
 
-        # Sonderfall Sauggreifer
+        # Sonderfall Deckel-Joint
         if node_id == "Sauggreifer_EIN":
-            current = suction.is_active
+            current = deckel_joint.is_active
             if value and not current:
-                suction.attach()
+                deckel_joint.attach()
                 nm.node_values[node_id] = True
                 nm.set_display(node_id, True)
             elif not value and current:
-                suction.detach()
+                deckel_joint.detach()
                 nm.node_values[node_id] = False
                 nm.set_display(node_id, False)
             return

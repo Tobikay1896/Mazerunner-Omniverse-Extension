@@ -7,7 +7,7 @@ Haupteinstiegspunkt. Setzt alle Komponenten zusammen:
 - NodeManager → Datenhaltung + USD-Zugriff
 - APIClient → REST-API
 - MQTTHandler → Live-Daten
-- SuctionGripper → physikalisches Greifen
+- DeckelJointHandler → Deckel-Joint-Verwaltung (USD/Physics)
 - TimelineHandler → SIM-Loop
 - Routines → Automatisierte Abläufe
 """
@@ -18,14 +18,13 @@ import omni.ext
 import omni.kit.app
 
 from .constants import (
-    CLR_GREEN, CLR_RED, CLR_YELLOW, CLR_TEXT_DIM,
-    CLR_ORANGE, CLR_ACCENT,
+    CLR_GREEN, CLR_RED, CLR_YELLOW, CLR_TEXT_DIM, CLR_ORANGE,
 )
 from .logger import Logger
 from .node_manager import NodeManager
 from .api_client import APIClient
 from .mqtt_handler import MQTTHandler
-from .suction_gripper import SuctionGripper
+from .deckel_joint_handler import DeckelJointHandler
 from .timeline_handler import TimelineHandler
 from .routines import Routines
 from .ui_builder import UIBuilder
@@ -80,12 +79,12 @@ class MyExtension(omni.ext.IExt):
         self.node_manager.list_container = self._ui.list_container
         self.node_manager.node_count_label = self._ui.node_count_label
 
-        self.suction = SuctionGripper(self.logger)
+        self.deckel_joint = DeckelJointHandler(self.logger)
 
         self.api = APIClient(self.node_manager, self.logger, self._set_status_text)
         self.mqtt = MQTTHandler(self.node_manager, self.logger, self._loop,
                                 self._set_status_text)
-        self.timeline = TimelineHandler(self.suction, self.node_manager, self.logger)
+        self.timeline = TimelineHandler(self.deckel_joint, self.node_manager, self.logger)
         self.routines = Routines(self)
         self.timeline.set_routines(self.routines)
 
@@ -93,19 +92,19 @@ class MyExtension(omni.ext.IExt):
         self.node_manager.load(self._on_control_clicked)
         self.timeline.subscribe()
 
-        # 5) Sauggreifer-Initialzustand: Startposition speichern + Deckel dynamisch
+        # 5) Deckel-Joint-Initialzustand: Startposition speichern + Deckel dynamisch
         # Mit kurzer Verzögerung, damit die Stage vollständig geladen ist
-        t = asyncio.ensure_future(self._init_suction())
+        t = asyncio.ensure_future(self._init_deckel_joint())
         self._active_tasks.append(t)
 
         self.logger.log("Extension gestartet", "info")
         self.logger.log("SIM-Modus aktiv", "info")
 
-    async def _init_suction(self):
+    async def _init_deckel_joint(self):
         """Stage-Ready abwarten, dann Deckel-Startposition sichern und dynamisch schalten."""
         await asyncio.sleep(0.5)
-        self.suction.save_start_position()
-        self.suction._set_target_kinematic(False)
+        self.deckel_joint.save_start_position()
+        self.deckel_joint._set_target_kinematic(False)
 
     # =================================================================
     def on_shutdown(self):
@@ -118,9 +117,9 @@ class MyExtension(omni.ext.IExt):
         except Exception:
             pass
 
-        # Sauggreifer reset
+        # Deckel-Joint reset
         try:
-            self.suction.reset()
+            self.deckel_joint.reset()
         except Exception:
             pass
 
@@ -170,7 +169,7 @@ class MyExtension(omni.ext.IExt):
             })
             self._set_status_text("SIM-Modus aktiv", CLR_GREEN)
             self.logger.log("→ SIM-Modus | Kein API-Polling", "ok")
-            self.suction._set_target_kinematic(False)
+            self.deckel_joint._set_target_kinematic(False)
         else:
             # LIVE aktivieren – MQTT + initiales Polling
             self.mqtt.start()
@@ -204,7 +203,7 @@ class MyExtension(omni.ext.IExt):
         # Spezialfall: Sauggreifer
         if node_id == "Sauggreifer_EIN":
             if self.sim_mode:
-                active = self.suction.toggle()
+                active = self.deckel_joint.toggle()
                 self.node_manager.node_values[node_id] = active
                 self.node_manager.set_display(node_id, active)
             else:

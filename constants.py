@@ -2,8 +2,8 @@
 constants.py
 ============
 Zentrale Konstanten für die gesamte Extension.
-Hier liegen alle Farbwerte, USD-Pfade, MQTT-Settings und magische Zahlen,
-damit sie an EINER Stelle gepflegt werden können.
+Hier liegen alle Farbwerte, MQTT-Settings und API-Konfiguration.
+USD-Pfade und Geometriewerte des Deckel-Joints → deckel_joint_handler.py
 """
 
 # -------------------------------------------------------------------------
@@ -43,32 +43,3 @@ MQTT_WS_URL     = "ws://digitaltwinservice.de:9001/mqtt"  # WebSocket-Transport
 API_URL_GET = "https://digitaltwinservice.de/api/Database/GetValue"
 API_URL_SET = "https://digitaltwinservice.de/api/Database/SetValue"
 API_KEY     = "2b56f658-b11f-4067-9537-631bf27a30f0"       # persönlichen DigitalTwinApp - API-Schluessel setzen
-
-# -------------------------------------------------------------------------
-# USD-Pfade für den Sauggreifer und das Pick-/Place-Setup
-# -------------------------------------------------------------------------
-SUCTION_TARGET_PATH       = "/World/Production_Line/Deckelmagazin/Deckel"
-SUCTION_GRIPPER_MESH_PATH = (
-    "/World/Production_Line/Schwenkarm_Deckel/"
-    "Schwenkarm_Deckel_move_translatory/"
-    "Schwenkarm_Deckel_move_rotatory/"
-    "tn__Saubnapf1_zH/tn__Volumenkrper2_gm2/Mesh"
-)
-SUCTION_JOINT_PATH        = "/World/Production_Line/SaugnapfDeckelJoint"
-PLACE_TARGET_PATH         = "/World/Production_Line/Mazemagazin/Maze"
-
-# -------------------------------------------------------------------------
-# Geometrische Offsets für das Aufsetzen des Deckels
-# -------------------------------------------------------------------------
-PLACE_OFFSET_X      = 0.0
-PLACE_OFFSET_Y      = 0.0
-PLACE_OFFSET_Z      = 0.0
-DECKEL_HALF_HEIGHT  = 0.0025   # 5 mm / 2 → halbe Deckelhöhe
-SAFETY_OFFSET       = 0.0005   # 0.5 mm Sicherheitsabstand
-
-# -------------------------------------------------------------------------
-# Deckel-Startposition (lokal relativ zu /World/Production_Line/Deckelmagazin)
-# Aus dem Isaac-Sim-Property-Panel abgelesen. Wird beim Reset als Ziel gesetzt.
-# -------------------------------------------------------------------------
-DECKEL_START_LOCAL_POS = (-72.15972, -0.93587, 7.15066)
-DECKEL_START_LOCAL_ROT = (0.0, 0.0, 0.0)   # Euler XYZ
