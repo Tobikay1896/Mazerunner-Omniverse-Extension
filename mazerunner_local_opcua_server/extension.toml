@@ -1,0 +1,18 @@
+[package]
+# Die ID muss exakt dem Ordnernamen entsprechen
+title = "Maze Runner UI Local OPC UA "
+description = "UI fuer meine Bachelorarbeit"
+version = "1.0.0"
+keywords = ["nvidia", "isaac", "ui"]
+category = "Simulation"
+repository = ""
+icon = ""
+preview_image = ""
+
+[dependencies]
+"omni.kit.uiapp" = {}
+"omni.isaac.ui" = {}
+
+[[python.module]]
+name = "omni.mazerunner.ui"
+path = "."
